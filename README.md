@@ -10,15 +10,19 @@ The PC launcher for **Lumiose Online**, the fan-made multiplayer mod for Pokémo
 
 1. Extract the complete **ZA Recomp** folder somewhere you can write to (not inside OneDrive or Program Files).
 2. Open **Lumiose Online.exe**.
-3. Supply your own Pokémon Legends: Z-A game files, update 2.0.2 and the DLC. No game files come with this launcher.
+3. Choose **all three** of your own Pokémon Legends: Z-A packages together: the base game, **the 2.0.2 update** and the DLC.
+   No game files come with this launcher.
+
+**Lumiose Online needs the 2.0.2 update.** ZA Recomp alone also runs the base game (1.0.0) and 2.0.0, so setting up without the
+update works until Lumiose prepares, which then fails with **"Update preparation failed: Isolated startup reported a crash"** /
+"Lumiose preparation did not finish" (v0.1.38.2 and newer say what is wrong instead). To fix it: close the launcher, delete or
+rename the `extracted` folder inside ZA Recomp, open Lumiose Online.exe again and choose the base game, the 2.0.2 update and the
+DLC together. Your saves stay.
 
 Older CPUs without AVX2 work from v0.1.38.1 on (the game code is built for them; it runs slower).
 
-**"Update preparation failed: Isolated startup reported a crash"** on an older CPU: extract v0.1.38.1 or newer over your ZA
-Recomp folder, replacing files, and open Lumiose Online.exe again.
-
 **Updating an existing install:** close the game, then copy the complete new archive over your install, merging folders. Your
-saves, settings, locally generated game code and installed mod data stay. Launchers up to v0.1.38.1 look for updates at the old
+saves, settings, locally generated game code and installed mod data stay. Launchers up to v0.1.38.2 look for updates at the old
 GitHub page, which is gone, so **Update now** inside the launcher will not find new versions. Get new versions from the
 releases here.
 

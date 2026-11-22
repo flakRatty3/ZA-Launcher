@@ -9,7 +9,7 @@ from datetime import datetime
 
 ROOT = Path(__file__).resolve().parents[2]
 GAME_CODE_REVISION = 'launcher-title-offset-null-guard-v1'
-LAUNCHER_VERSION = 'v0.1.38'
+LAUNCHER_VERSION = 'v0.1.38.2'
 sys.path[:0] = [str(ROOT / 'python-deps'), str(ROOT / 'tools' / 'lumiose')]
 from auto_launch import launch
 from platform_paths import EXECUTABLE, GAME_LIBRARY, lock_file
@@ -23,6 +23,35 @@ def log_event(message):
             f.write(f'{datetime.now().isoformat(timespec="seconds")} {message}\n')
     except OSError:
         pass  # Diagnostics must not stop the launcher.
+
+
+# Pokemon Legends Z-A exefs/main build IDs (first 8 bytes; runtime/main.c). ZA Recomp runs all three; Lumiose needs 2.0.2.
+ZA_202 = 'B1F12FD919EAE86A'
+ZA_VERSIONS = {'7222E13ECF6ADB32': '1.0.0 (the base game without its update)', '8A1C86C437394B69': '2.0.0', ZA_202: '2.0.2'}
+
+
+def check_game_version():
+    """Stop with the fix when the set-up game is not 2.0.2: Lumiose cannot be prepared for it, and the player used to see only
+    "Isolated startup reported a crash" (capture.log: "FATAL: Lumiose test requires the 2.0.2 game build")."""
+    main = ROOT / 'extracted' / 'exefs' / 'main'
+    try:
+        with main.open('rb') as f:
+            head = f.read(0x48)
+    except OSError:
+        return  # (no game set up: the launcher's own check reports that)
+    if len(head) < 0x48 or head[:4] != b'NSO0':
+        return
+    build = head[0x40:0x48].hex().upper()
+    if build == ZA_202:
+        return
+    version = ZA_VERSIONS.get(build, 'an unknown version (main ' + build + ')')
+    log_event('Game files are ' + version + ', not 2.0.2')
+    raise RuntimeError(
+        'Your game files are Pokemon Legends Z-A ' + version + '. Lumiose Online needs the 2.0.2 update.\n'
+        '  1. Close this window.\n'
+        '  2. Delete (or rename) the "extracted" folder in ' + str(ROOT) + '.\n'
+        '  3. Open Lumiose Online.exe again and choose the base game, the 2.0.2 update and the DLC together.\n'
+        'Your saves are not changed.')
 
 
 def desktop_notice(title, message, error=False):
@@ -70,6 +99,7 @@ def main():
             if result.returncode or not done.is_file() or not (ROOT / 'extracted' / (GAME_LIBRARY + '.id')).is_file():
                 raise RuntimeError('Game setup was not completed. Start Lumiose Online again when you are ready.')
         log_event('Game setup check completed')
+    check_game_version()  # 11-22: 2.0.2 only, with the fix, before any preparation
     if first_setup:
         log_event('Preparing bundled Lumiose for first launch')
         cmd = [sys.executable, str(ROOT / 'tools/lumiose/setup.py'), '--install', str(ROOT),
