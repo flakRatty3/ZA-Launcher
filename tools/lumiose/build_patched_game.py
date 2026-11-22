@@ -5,7 +5,7 @@ import hashlib
 import os
 import subprocess
 import sys
-from platform_paths import WINDOWS, ZIG
+from platform_paths import WINDOWS, ZIG, old_cpu_build, zig_cpu, zig_runtime
 
 root = Path(__file__).resolve().parents[2]
 scratch = Path(os.environ['LUMIOSE_SCRATCH'])
@@ -21,6 +21,10 @@ objdir = Path(os.environ.get('LUMIOSE_OBJECT_DIR', scratch / 'objects'))
 objdir.mkdir(exist_ok=True)
 generated = Path(os.environ.get('LUMIOSE_GAME_GEN', scratch / 'generated'))
 sources = sorted((generated / 'main').glob('*.c')) + sorted((generated / 'sdk').glob('*.c'))
+CPU = '-mcpu=' + zig_cpu()  # x86-64-v2 when the runtime built this machine's game code for a CPU without AVX2
+RT = zig_runtime(zigroot)
+if old_cpu_build():
+    print('Building for a CPU without AVX2 / FMA / BMI2: x86-64-v2 game code, v2 runtime libraries', flush=True)
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -34,7 +38,7 @@ def prepare(src):
             return existing, True
     out = objdir / (src.stem + '.o')
     args = [zig, 'cc', '-O1', '-g0', '-fno-sanitize=all', '-fno-strict-aliasing', '-Wno-return-type',
-            '-Wno-unused-label', '-fvisibility=hidden', '-mcpu=x86_64_v3', '-I', str(source / 'runtime'),
+            '-Wno-unused-label', '-fvisibility=hidden', CPU, '-I', str(source / 'runtime'),
             '-c', str(src), '-o', str(out)]
     if not WINDOWS: args[2:2] = ['-fPIC', '-DGUEST_VOLATILE', '-target', 'x86_64-linux-gnu']
     result = subprocess.run(args, env=env, capture_output=True, text=True)
@@ -57,7 +61,7 @@ game_id = Path(os.environ['LUMIOSE_GAME_ID_FILE']).read_text().strip()
 if not game_id or any(c not in '0123456789abcdefABCDEF-v' for c in game_id):
     raise RuntimeError('Invalid game-code identification')
 args = [zig, 'cc', '-O1', '-g0', '-fno-sanitize=all', '-fno-strict-aliasing',
-        '-fvisibility=hidden', '-mcpu=x86_64_v3', '-DGAMELIB_ID="' + game_id + '"',
+        '-fvisibility=hidden', CPU, '-DGAMELIB_ID="' + game_id + '"',
         '-I', str(source / 'runtime'), '-c', str(source / 'tools' / 'gamelib_entry.c'), '-o', str(entry_obj)]
 if not WINDOWS: args[2:2] = ['-fPIC', '-DGUEST_VOLATILE', '-target', 'x86_64-linux-gnu']
 result = subprocess.run(args, env=env, capture_output=True, text=True)
@@ -68,7 +72,7 @@ rsp = scratch / 'patched-objects.rsp'
 rsp.write_text(''.join('"' + str(p).replace('\\', '/') + '"\n' for p in objects))
 output = os.environ.get('LUMIOSE_GAME_OUTPUT', str(scratch / ('patched-lasgame.dll' if WINDOWS else 'patched-lasgame.so')))
 if WINDOWS:
-    cmd = [zig, 'lld-link', '@' + str(zigroot / 'rt' / 'link.rsp'), '-LIBPATH:' + str(zigroot / 'rt'),
+    cmd = [zig, 'lld-link', '@' + str(RT / 'link.rsp'), '-LIBPATH:' + str(RT),
            '-OUT:' + output, '@' + str(rsp), str(source / 'build' / 'lasrecomp.dll.a')]
 else:
     cmd = [zig, 'cc', '-target', 'x86_64-linux-gnu', '-shared', '-o', output, '@' + str(rsp)]
