@@ -355,31 +355,17 @@ static void load_fonts(void) {
               g_game_is_la ? "LAS Recomp" : "ZA Recomp");
 }
 
-// The prompts' style, chosen once at boot: "keyboard", "xbox", "playstation", "nintendo" (a controller SDL names no
-// family for) or NULL (the game's own: no controller, prompts = nintendo). Each set names, for every input, the key
-// or button it is bound to now - in that pad's own words (A B X Y LB RB LT RT Menu View; cross circle square triangle
-// L1 R1 L2 R2 Options Share), made by tools/za/prompt_textures.py for the current bindings. Names both the button glyph
-// font (fonts/nintendo_ext_003_<set>.ttf: tools/za/keyboard_font.py, xbox_font.py) and the game's own UI icons
-// relabelled (textures/prompts/<set>: tools/za/prompt_textures.py, runtime/nvn/vulkan/textures.c).
+// [Matroskin] Resolve the current style for fallback assets. The live font selects its glyph bank at draw time.
 const char *pl_prompt_set(void) {
-    static int done;
-    static const char *set;
-    if (done) return set;
-    done = 1;
-    // (bind_label_family, not input_pad_family: runtime/services/fs.c asks this before runtime/hle/input.c has opened
-    // the controller - it asked SDL, which knows the pad's type already; "auto" used to come out as Nintendo's)
-    extern int bind_label_family(void);
-    extern int16_t g_bind_pad[];
-    bool pad = SDL_HasGamepad();
-    int fam = pad ? bind_label_family() : 0;
-    extern int settings_on_steam_deck(void);
-    bool deck = g_settings.prompts == PROMPTS_STEAMDECK || (g_settings.prompts == PROMPTS_AUTO && fam != 2 && settings_on_steam_deck());  // (a Deck is a pad, also when SDL has not opened its controller yet at boot)
-    bool xbox = !deck && (g_settings.prompts == PROMPTS_XBOX || (g_settings.prompts == PROMPTS_AUTO && fam == 1));
-    bool ps = g_settings.prompts == PROMPTS_PLAYSTATION || (g_settings.prompts == PROMPTS_AUTO && fam == 2);
-    bool keys = g_settings.prompts == PROMPTS_KEYBOARD || (g_settings.prompts == PROMPTS_AUTO && !pad && !deck);
-    (void)g_bind_pad;  // (each set is made for the bindings: runtime/ui/launcher.mm remakes them when those change)
-    set = keys ? "keyboard" : deck ? "steamdeck" : xbox ? "xbox" : ps ? "playstation" : pad ? "nintendo" : NULL;
-    return set;
+    extern int input_prompt_style(void);
+    switch (input_prompt_style()) {
+    case PROMPTS_KEYBOARD: return "keyboard";
+    case PROMPTS_XBOX: return "xbox";
+    case PROMPTS_PLAYSTATION: return "playstation";
+    case PROMPTS_STEAMDECK: return "steamdeck";
+    case PROMPTS_NINTENDO: return "nintendo";
+    default: return NULL;
+    }
 }
 
 // SharedFontType: 0 Standard, 1 ChineseSimple, 2 ChineseSimpleExt, 3 ChineseTraditional, 4 Korean, 5 NintendoExt

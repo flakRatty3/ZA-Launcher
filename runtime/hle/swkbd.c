@@ -192,11 +192,15 @@ HLE_FUNC("_ZN2nn5swkbd12ShowKeyboardEPNS0_6StringERKNS0_15ShowKeyboardArgE", swk
     }
     char text[1024];
     int ok = menu_keyboard_run(initial, max_len, text, sizeof text, field);
-    if (!ok) snprintf(text, sizeof text, "%s", initial);  // cancelled: keep what was there
-    if (mod_keyboard) LOG("[swkbd] Lumiose entry (field %d, max %d, %s): %s (%zu bytes)\n", field, max_len, utf8 ? "UTF-8" : "UTF-16",
-                  ok ? "entered" : "cancelled", strlen(text));
-    else LOG("[swkbd] name entry (max %d, initial \"%s\", %s): %s \"%s\"\n", max_len, initial, utf8 ? "UTF-8" : "UTF-16",
-             ok ? "entered" : "cancelled", text);
+    if (!ok) {
+        LOG("[swkbd] %s entry cancelled\n", mod_keyboard ? "Lumiose" : "name");
+        c->x[0] = 0x29f;  // [Matroskin] nn::swkbd::ShowKeyboard returns this result on applet cancellation.
+        return;
+    }
+    if (mod_keyboard) LOG("[swkbd] Lumiose entry (field %d, max %d, %s): entered (%zu bytes)\n",
+                         field, max_len, utf8 ? "UTF-8" : "UTF-16", strlen(text));
+    else LOG("[swkbd] name entry (max %d, initial \"%s\", %s): entered \"%s\"\n",
+             max_len, initial, utf8 ? "UTF-8" : "UTF-16", text);
     if (ptr && size) {
         memset((void *)(uintptr_t)ptr, 0, size);
         if (utf8) snprintf((char *)(uintptr_t)ptr, size, "%s", text);

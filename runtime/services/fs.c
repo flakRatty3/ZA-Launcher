@@ -624,6 +624,10 @@ static void trpfd_unlist(const uint8_t *fmeta, uint64_t foff, uint64_t fsz) {
 // replaced, data): the bytes replace those at that offset in that RomFS file - only when the file has the bytes the
 // record was made for (one patch file covers several game versions; another version's records are left out).
 static void prompt_patch(void) {
+    extern bool rt_za_prompt_live_available(void);
+    // [Matroskin] RomFS may mount before SDL starts. Keep the original glyphs in Auto
+    // when the live font is installed, so device changes can always use them.
+    if (g_settings.prompts == PROMPTS_AUTO && rt_za_prompt_live_available()) return;
     extern const char *pl_prompt_set(void);
     const char *set = pl_prompt_set();
     if (!set) return;

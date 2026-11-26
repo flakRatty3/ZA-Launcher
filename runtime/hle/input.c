@@ -33,6 +33,7 @@ static _Atomic int prompt_input;
 static _Atomic int32_t key_lx, key_ly, key_rx, key_ry, pad_lx, pad_ly, pad_rx, pad_ry;
 static uint8_t keys_down[SDL_SCANCODE_COUNT];
 static SDL_Gamepad *pad;
+static bool pad_trigger_down[2];
 static _Atomic int64_t sampling;
 static bool host_test;  // scripted runs must not vibrate the user's controller
 
@@ -1861,61 +1862,84 @@ bool input_user_blocked(const SDL_Event *e) {
 // scrolls. Every window mode and platform: SDL hides it over our window only. Main thread (the event loops: the
 // game's ui_run and the start screen).
 static bool cursor_hidden;  // (the start screen keeps ImGui's backend from showing it again meanwhile)
-static _Atomic uint32_t prompt_pad;
-static int prompt_controller_type(SDL_GamepadType type, uint16_t vendor) {
-    bool xbox = type == SDL_GAMEPAD_TYPE_XBOX360 || type == SDL_GAMEPAD_TYPE_XBOXONE;
-    return xbox && (!vendor || vendor == 0x045e) ? PROMPTS_XBOX : PROMPTS_NINTENDO;
+// [Matroskin] The connected controller list drives Auto prompt selection.
+static int prompt_controller_type(SDL_JoystickID id) {
+    const Uint16 vendor = SDL_GetGamepadVendorForID(id);
+    // [Matroskin] SDL can classify the integrated Steam Deck controller as a standard pad.
+    if (vendor == 0x28de && SDL_GetGamepadProductForID(id) == 0x1205) return PROMPTS_STEAMDECK;
+    SDL_GamepadType type = SDL_GetRealGamepadTypeForID(id);
+    switch (type) {
+    case SDL_GAMEPAD_TYPE_XBOX360: case SDL_GAMEPAD_TYPE_XBOXONE:
+        return PROMPTS_XBOX;
+    case SDL_GAMEPAD_TYPE_PS3: case SDL_GAMEPAD_TYPE_PS4: case SDL_GAMEPAD_TYPE_PS5:
+        return PROMPTS_PLAYSTATION;
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO:
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+        return PROMPTS_NINTENDO;
+    default:
+        switch (vendor) {
+        case 0x054c: return PROMPTS_PLAYSTATION;
+        case 0x057e: return PROMPTS_NINTENDO;
+        default: return PROMPTS_XBOX;  // [Matroskin] Standard SDL gamepads use the Xbox layout.
+        }
+    }
 }
+
+static int prompt_priority(int style) {
+    switch (style) {
+    case PROMPTS_XBOX: return 4;
+    case PROMPTS_PLAYSTATION: return 3;
+    case PROMPTS_NINTENDO: return 2;
+    case PROMPTS_STEAMDECK: return 1;
+    default: return 0;
+    }
+}
+
+static SDL_JoystickID preferred_gamepad(SDL_JoystickID keep, SDL_JoystickID removed, int *style) {
+    int count = 0;
+    SDL_JoystickID *ids = SDL_GetGamepads(&count);
+    SDL_JoystickID best = 0;
+    *style = PROMPTS_KEYBOARD;
+    for (int i = 0; ids && i < count; ++i) {
+        // [Matroskin] The removal event can arrive while the pad is still in SDL's enumeration.
+        if (ids[i] == removed) continue;
+        const int candidate = prompt_controller_type(ids[i]);
+        const int rank = prompt_priority(candidate);
+        const int best_rank = prompt_priority(*style);
+        // [Matroskin] Keep the current pad on ties so adding a second pad of the same type leaves input ownership stable.
+        if (rank > best_rank || (rank == best_rank && ids[i] == keep)) {
+            best = ids[i];
+            *style = candidate;
+        }
+    }
+    SDL_free(ids);
+    return best;
+}
+
 void input_note_prompt_event(const SDL_Event *e) {
-    static float motion;
-    if (pad && !game_mouse_menu_state(za_menu_state()) && (e->type == SDL_EVENT_MOUSE_MOTION || e->type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
-                e->type == SDL_EVENT_MOUSE_BUTTON_UP || e->type == SDL_EVENT_MOUSE_WHEEL)) return;
-    SDL_JoystickID id = 0;
-    switch (e->type) {
-    case SDL_EVENT_KEY_DOWN:
-        if (e->key.repeat) return;
-        if (e->key.scancode >= SDL_SCANCODE_LCTRL && e->key.scancode <= SDL_SCANCODE_RGUI) {
-            bool bound = false;
-            for (int i = 0; i < BIND_KEY_COUNT; i++) if (g_bind_key[i] == e->key.scancode) bound = true;
-            if (!bound) return; // e.g. Alt-Tab is not gameplay
-        }
-        atomic_store(&prompt_input, PROMPTS_KEYBOARD); motion = 0; return;
-    case SDL_EVENT_MOUSE_MOTION:
-        motion += fabsf(e->motion.xrel) + fabsf(e->motion.yrel);
-        if (motion <= 6) return;
-        atomic_store(&prompt_input, PROMPTS_KEYBOARD); motion = 0; return;
-    case SDL_EVENT_MOUSE_BUTTON_DOWN: case SDL_EVENT_MOUSE_WHEEL:
-        atomic_store(&prompt_input, PROMPTS_KEYBOARD); motion = 0; return;
-    case SDL_EVENT_GAMEPAD_BUTTON_DOWN: id = e->gbutton.which; break;
-    case SDL_EVENT_GAMEPAD_AXIS_MOTION:
-        if (abs(e->gaxis.value) <= 16000) return;
-        id = e->gaxis.which; break;
-    case SDL_EVENT_GAMEPAD_REMOVED:
-        if (atomic_load(&prompt_pad) == e->gdevice.which) {
-            atomic_store(&prompt_pad, 0);
-            atomic_store(&prompt_input, PROMPTS_KEYBOARD);
-        }
-        return;
-    default: return;
-    }
-    if (id && SDL_IsGamepad(id)) {
-        atomic_store(&prompt_pad, id);
-        atomic_store(&prompt_input, prompt_controller_type(SDL_GetGamepadTypeForID(id), SDL_GetGamepadVendorForID(id)));
-        motion = 0;
-    }
+    if (e->type != SDL_EVENT_GAMEPAD_ADDED && e->type != SDL_EVENT_GAMEPAD_REMOVED &&
+        e->type != SDL_EVENT_GAMEPAD_REMAPPED) return;
+    int style;
+    preferred_gamepad(0, e->type == SDL_EVENT_GAMEPAD_REMOVED ? e->gdevice.which : 0, &style);
+    atomic_store(&prompt_input, style);
 }
+
 int input_prompt_auto(void) {
     int active = atomic_load(&prompt_input);
     if (active) return active;
-    int n = 0;
-    SDL_JoystickID *ids = SDL_GetGamepads(&n);
-    int style = ids && n ? prompt_controller_type(SDL_GetGamepadTypeForID(ids[0]), SDL_GetGamepadVendorForID(ids[0])) : PROMPTS_KEYBOARD;
-    if (ids && n) atomic_store(&prompt_pad, ids[0]);
-    SDL_free(ids);
-    int expected = 0;
-    atomic_compare_exchange_strong(&prompt_input, &expected, style);
+    if (!(SDL_WasInit(SDL_INIT_GAMEPAD) & SDL_INIT_GAMEPAD)) return PROMPTS_KEYBOARD;
+    int style;
+    preferred_gamepad(0, 0, &style);
+    int unset = 0;
+    atomic_compare_exchange_strong(&prompt_input, &unset, style);
     return atomic_load(&prompt_input);
 }
+int input_prompt_style(void) {
+    return g_settings.prompts == PROMPTS_AUTO ? input_prompt_auto() : g_settings.prompts;
+}
+
 bool input_cursor_hidden(void) { return cursor_hidden; }
 void input_cursor_event(const SDL_Event *e) {
     static float moved;  // (points the mouse moved since the cursor was hidden)
@@ -2496,6 +2520,46 @@ bool input_title_key_event(const SDL_Event *e){
         atomic_store(&title_confirm_until,renderer_present_count()+4);
     return true;
 }
+static void select_gamepad(SDL_JoystickID removed) {
+    const SDL_JoystickID current = pad ? SDL_GetGamepadID(pad) : 0;
+    int style;
+    const SDL_JoystickID id = preferred_gamepad(current, removed, &style);
+    if (id == current) {
+        atomic_store(&prompt_input, style);
+        return;
+    }
+
+    SDL_Gamepad *next = id ? SDL_OpenGamepad(id) : NULL;
+    if (id && !next && current && current != removed) {
+        atomic_store(&prompt_input, prompt_controller_type(current));
+        return;
+    }
+    if (pad) {
+        SDL_RumbleGamepad(pad, 0, 0, 0);
+        SDL_CloseGamepad(pad);
+    }
+    pad = next;
+    pad_trigger_down[0] = pad && SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 16000;
+    pad_trigger_down[1] = pad && SDL_GetGamepadAxis(pad, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 16000;
+    if (pad) {
+        mouse_disable_gameplay_for_pad();
+        LOG("[input] gamepad: %s\n", SDL_GetGamepadName(pad));
+    }
+    atomic_store(&prompt_input, pad ? style : PROMPTS_KEYBOARD);
+    note_family();
+    touch_active = 0;
+    touch_pending = 0;
+    led_forget();
+    rumble_clear();
+    rumble_last_lo = rumble_last_hi = 0;
+    rumble_warned = false;
+    recompute_pad();
+}
+
+static bool gamepad_input_allowed(SDL_JoystickID id) {
+    return host_test ? id == TEST_DEVICE : pad && SDL_GetGamepadID(pad) == id;
+}
+
 void input_handle_event(const SDL_Event *e) {
     // A click can open a different presenter before its release arrives.
     // Release the physical touch before any presenter or controller gate can
@@ -2518,10 +2582,7 @@ void input_handle_event(const SDL_Event *e) {
     static bool scanned;  // pads present at startup: their ADDED event may have gone to the start screen's loop
     if (!scanned) {
         scanned = true;
-        int n = 0;
-        SDL_JoystickID *ids = SDL_GetGamepads(&n);
-        if (n > 0 && !pad) { pad = SDL_OpenGamepad(ids[0]); LOG("[input] gamepad: %s\n", SDL_GetGamepadName(pad)); note_family(); }
-        SDL_free(ids);
+        select_gamepad(0);
     }
     // Mouse clicks still feed the mod's touchscreen UI with a controller
     // connected. Camera and gameplay-button paths retain their own pad gates.
@@ -2602,50 +2663,30 @@ void input_handle_event(const SDL_Event *e) {
         break;
     }
     case SDL_EVENT_GAMEPAD_ADDED:
-        if (!pad) {
-            pad = SDL_OpenGamepad(e->gdevice.which);
-            if (pad) { mouse_disable_gameplay_for_pad(); LOG("[input] gamepad: %s\n", SDL_GetGamepadName(pad)); note_family(); }
-        }
-        break;
     case SDL_EVENT_GAMEPAD_REMOVED:
-        if (pad && SDL_GetGamepadID(pad) == e->gdevice.which) {
-            SDL_RumbleGamepad(pad, 0, 0, 0);
-            SDL_CloseGamepad(pad); pad = NULL;
-            // Other controllers may have been connected while this one was
-            // active. Keep mouse input disabled until the last one is gone.
-            int count = 0;
-            SDL_JoystickID *ids = SDL_GetGamepads(&count);
-            for (int i = 0; ids && i < count && !pad; i++)
-                if (ids[i] != e->gdevice.which) pad = SDL_OpenGamepad(ids[i]);
-            SDL_free(ids);
-            if (pad) LOG("[input] gamepad: %s\n", SDL_GetGamepadName(pad));
-            note_family();
-            touch_active = 0; touch_pending = 0;
-            led_forget();  // (gone: it shows its own colour when it comes back)
-            rumble_clear(); rumble_last_lo = rumble_last_hi = 0; rumble_warned = false;
-        }
-        recompute_pad();
+    case SDL_EVENT_GAMEPAD_REMAPPED:
+        select_gamepad(e->type == SDL_EVENT_GAMEPAD_REMOVED ? e->gdevice.which : 0);
         break;
-    case SDL_EVENT_GAMEPAD_BUTTON_DOWN: case SDL_EVENT_GAMEPAD_BUTTON_UP:
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN: case SDL_EVENT_GAMEPAD_BUTTON_UP: {
+        if (!gamepad_input_allowed(e->gbutton.which)) break;
         if (e->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
             atomic_fetch_add(&bag_drag_generation, 1); atomic_store(&bag_drag_request, 0);
         }
-        if (!host_test || e->gbutton.which == TEST_DEVICE) {  // (the press as the event has it, before reading the pad)
-            uint64_t b = pad_bits(e->gbutton.button);
-            note_press(e->gbutton.down ? b : 0, e->gbutton.down ? 0 : b);
-        }
+        const uint64_t b = pad_bits(e->gbutton.button);
+        note_press(e->gbutton.down ? b : 0, e->gbutton.down ? 0 : b);
         recompute_pad();
         break;
+    }
     case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+        if (!gamepad_input_allowed(e->gaxis.which)) break;
         if ((e->gaxis.axis == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || e->gaxis.axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) &&
             !host_test) {  // (the triggers as buttons: past half way)
-            static bool trig[2];
             int t = e->gaxis.axis == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
             bool on = e->gaxis.value > 16000;
-            if (on != trig[t]) {
+            if (on != pad_trigger_down[t]) {
                 uint64_t b = pad_bits(PADB_LTRIGGER + t);
                 note_press(on ? b : 0, on ? 0 : b);
-                trig[t] = on;
+                pad_trigger_down[t] = on;
             }
         }
         recompute_pad();

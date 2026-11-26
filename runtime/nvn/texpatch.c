@@ -304,15 +304,12 @@ static int prompt_style(void) {
     }
     extern uint64_t renderer_present_count(void);
     int p = env >= 0 && (until < 0 || (long)renderer_present_count() < until) ? env : g_settings.prompts;
-    extern int settings_on_steam_deck(void);
+    // [Matroskin] Texture prompts share the controller priority used by text and Lumiose badges.
+    if (p == PROMPTS_AUTO) p = input_prompt_auto();
     if (p == PROMPTS_STEAMDECK) return STYLE_DECK;
     if (p == PROMPTS_XBOX) return STYLE_XBOX;
     if (p == PROMPTS_PLAYSTATION) return STYLE_PS;
-    if (p == PROMPTS_NINTENDO) return STYLE_NINTENDO;
-    extern int input_pad_family(void);  // runtime/hle/input.c: the controller SDL reports
-    int f = input_pad_family();
-    if (settings_on_steam_deck() && f != 2) return STYLE_DECK;
-    return f == 1 ? STYLE_XBOX : f == 2 ? STYLE_PS : STYLE_NINTENDO;
+    return STYLE_NINTENDO;
 }
 
 static bool hide_hero(void) {

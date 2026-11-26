@@ -47,8 +47,9 @@ const char *bind_pad_label(int host, int fam); // controller button in the pad f
 const char *bind_key_label(int scancode);
 int bind_label_family(void);                   // the connected controller's family (also on the start screen)
 int bind_prompts_auto(void);                   // what "Auto" button icons are now (PROMPTS_*)
-void input_note_prompt_event(const SDL_Event *event); // most recently used device, including at the launcher
-int input_prompt_auto(void);                   // keyboard, Xbox, or original game icons
+void input_note_prompt_event(const SDL_Event *event); // [Matroskin] Refresh Auto when controllers connect, disconnect, or are remapped.
+int input_prompt_style(void);                   // [Matroskin] Resolve the saved override or Auto.
+int input_prompt_auto(void);                    // [Matroskin] Pick the connected controller with the highest priority or keyboard.
 int input_family_of_type(int sdl_gamepad_type); // runtime/hle/input.c: 0 Nintendo, 1 Xbox (or labelled like one), 2 PS
 int input_menu_family(uint32_t sdl_joystick_id); // runtime/hle/input.c: our menus' layout for that pad (0: any)
 void bind_reset(int dev);

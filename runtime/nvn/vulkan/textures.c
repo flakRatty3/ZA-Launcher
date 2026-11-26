@@ -1106,7 +1106,10 @@ static void hd_switch(void) {
                           style == 104 ? "textures/prompts/keyboard_bag" :
                           style == 105 ? "textures/prompts/keyboard_title" :
                           style == 106 ? "textures/prompts/keyboard_box" :
-                          style == PROMPTS_XBOX ? "textures/prompts/xbox" : "";
+                          style == PROMPTS_XBOX ? "textures/prompts/xbox" :
+                          style == PROMPTS_PLAYSTATION ? "textures/prompts/playstation" :
+                          style == PROMPTS_NINTENDO ? "textures/prompts/nintendo" :
+                          style == PROMPTS_STEAMDECK ? "textures/prompts/steamdeck" : "";
         hd_scan(&next, dir);
         hd_sets[0] = next;
         int changed = 0;

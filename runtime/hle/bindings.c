@@ -79,7 +79,7 @@ int bind_pad_from_name(const char *name) {
 
 const char *bind_input_name(int slot) { return slot >= 0 && slot < BIND_KEY_COUNT ? k_names[slot] : "?"; }
 
-// fam: 0 Nintendo, 1 Xbox (and pads SDL labels like one), 2 PlayStation
+// [Matroskin] Prompt families are 0 Nintendo, 1 Xbox, 2 PlayStation, and 3 Steam Deck.
 const char *bind_pad_label(int host, int fam) {
     static const char *const nin[PADB_HOST_COUNT] = {
         "B", "A", "Y", "X", "Minus", "Home", "Plus", "Left stick press", "Right stick press", "L", "R",
@@ -96,7 +96,13 @@ const char *bind_pad_label(int host, int fam) {
         "D-pad Up", "D-pad Down", "D-pad Left", "D-pad Right", "Mute", "Right back button", "Left back button",
         "Right Fn", "Left Fn", "Touchpad", "Misc 2", "Misc 3", "Misc 4", "Misc 5", "Misc 6", "L2", "R2",
     };
+    static const char *const deck[PADB_HOST_COUNT] = {
+        "A", "B", "X", "Y", "View", "Steam", "Menu", "L3", "R3", "L1", "R1",
+        "D-pad Up", "D-pad Down", "D-pad Left", "D-pad Right", "QAM", "R4", "L4",
+        "R5", "L5", "Touchpad", "Misc 2", "Misc 3", "Misc 4", "Misc 5", "Misc 6", "L2", "R2",
+    };
     if (host < 0 || host >= PADB_HOST_COUNT) return "(none)";
+    if (fam == 3) return deck[host];
     return fam == 1 ? xb[host] : fam == 2 ? ps[host] : nin[host];
 }
 

@@ -9,12 +9,15 @@
 #include <SDL3/SDL.h>
 #include "imgui.h"
 
+// [Matroskin] Game uses the game's physical button positions, while Menu follows the launcher preference.
+enum class PadLayout { Menu, Game };
+
 // The ImGui key for a press / release of `button` on controller `which` (a release gets the key its press got)
-ImGuiKey ui_pad_key(SDL_JoystickID which, Uint8 button, bool down);
+ImGuiKey ui_pad_key(SDL_JoystickID which, Uint8 button, bool down, PadLayout layout = PadLayout::Menu);
 // The family of the controller last used in a menu (0 Nintendo, 1 Xbox, 2 PlayStation): the hints' words
 int ui_pad_family(void);
 // The confirm / back / start buttons' names in that family's words (e.g. PlayStation, game layout: "Circle" / "Cross" /
 // "Options"; controller convention: "Cross" / "Circle" / "Options")
-const char *ui_pad_confirm_label(void);
-const char *ui_pad_back_label(void);
+const char *ui_pad_confirm_label(PadLayout layout = PadLayout::Menu);
+const char *ui_pad_back_label(PadLayout layout = PadLayout::Menu);
 const char *ui_pad_start_label(void);

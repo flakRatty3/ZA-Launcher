@@ -1,6 +1,7 @@
 // On-screen keyboard (ImGui) for controllers, shared by the game's name entry (runtime/ui/menu.mm keyboard_draw,
 // runtime/hle/swkbd.c) and every text field in our menus (in-game overlay, start screen): ui_input_text.
 #pragma once
+#include "pad_nav.h"
 #include <stddef.h>
 #include "imgui.h"
 
@@ -21,7 +22,7 @@ void osk_cancel(void);  // (menu closed / reboot: drop it, the field keeps its t
 // Menu shortcuts (back, tabs, close) must not fire then: the keys are text.
 bool ui_text_busy(void);
 
-// The typed text (big font) and the key grid, drawn into the current window: d-pad / stick move, A types, B deletes,
-// Start / + OK; typed keys work too (Enter OK, Esc cancel). text: ASCII, at most max_chars. Returns 1 OK, -1 cancel,
-// 0 still typing.
-int osk_keys(char *text, size_t cap, int max_chars, bool appearing, float scale, ImFont *big, bool upper_first = true);
+// [Matroskin] Draw the key grid in the current window. The chosen layout maps Confirm to Type and Back to Delete.
+// Start or Enter submits. Escape cancels. Text is ASCII, up to max_chars. Returns 1 on submit, negative one on cancel, or 0 while editing.
+int osk_keys(char *text, size_t cap, int max_chars, bool appearing, float scale, ImFont *big, bool upper_first = true,
+             PadLayout layout = PadLayout::Menu);

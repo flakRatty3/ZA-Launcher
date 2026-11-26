@@ -212,7 +212,8 @@ bool menu_handle_event(const SDL_Event *e) {
         if (e->key.scancode == SDL_SCANCODE_RETURN || e->key.scancode == SDL_SCANCODE_KP_ENTER) { g_kbd = 2; return true; }
         if (e->key.scancode == SDL_SCANCODE_ESCAPE) { g_kbd = 3; return true; }
     }
-    if (g_kbd.load() == 1 && e->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e->gbutton.button == SDL_GAMEPAD_BUTTON_START) {
+    if (g_kbd.load() == 1 && g_kbd_chat.load() &&
+        e->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN && e->gbutton.button == SDL_GAMEPAD_BUTTON_START) {
         g_kbd = 2;
         return true;
     }
@@ -261,9 +262,12 @@ bool menu_handle_event(const SDL_Event *e) {
             return true;
         }
         if (!capturing()) return false;
-        ImGuiKey k = ui_pad_key(e->gbutton.which, e->gbutton.button, down);  // (confirm / back: pad_nav.h)
-        if (down && g_kbd.load() == 1 && k == ImGuiKey_GamepadFaceRight) {
-            g_kbd = 3;  // Cancel text entry with the configured back button.
+        // [Matroskin] Name entry follows the game's button positions and lets its grid handle Delete.
+        const bool name_entry = g_kbd.load() == 1 && !g_kbd_chat.load();
+        const PadLayout layout = name_entry ? PadLayout::Game : PadLayout::Menu;
+        ImGuiKey k = ui_pad_key(e->gbutton.which, e->gbutton.button, down, layout);  // (confirm / back: pad_nav.h)
+        if (down && g_kbd.load() == 1 && g_kbd_chat.load() && k == ImGuiKey_GamepadFaceRight) {
+            g_kbd = 3;  // [Matroskin] The configured Back button cancels inline fields.
             return true;
         }
         if (k != ImGuiKey_None) { QEvent q = {}; q.kind = QEvent::KEY; q.key = k; q.down = down; push(q); }
@@ -1331,9 +1335,13 @@ static void keyboard_draw(ImGuiIO &io, float scale) {
     ImGui::TextColored(ImVec4(0.95f, 0.71f, 0.27f, 1), "%s", g_kbd_chat.load() ?
                        TR("Type a chat message", "Digite uma mensagem") : TR("Enter your name", "Digite seu nome"));
     ImGui::PopFont();
-    static bool was_open, was_pad;
-    bool pad = !g_kbd_chat.load() && g_last_pad.load(), appearing = !was_open || pad != was_pad;
-    was_open = true, was_pad = pad;
+    static unsigned drawn_sequence;
+    static bool was_pad;
+    const unsigned sequence = g_kbd_sequence.load();
+    const bool pad = g_last_pad.load();
+    const bool appearing = sequence != drawn_sequence || pad != was_pad;
+    drawn_sequence = sequence;
+    was_pad = pad;
     if (!pad) {  // keyboard: type straight into the field
         if (appearing) ImGui::SetKeyboardFocusHere();
         ImGui::SetNextItemWidth(-1);
@@ -1346,11 +1354,10 @@ static void keyboard_draw(ImGuiIO &io, float scale) {
         ImGui::TextDisabled(TR("Enter  confirm      Esc  cancel      (%d / %d)", "Enter  confirma      Esc  cancela      (%d / %d)"),
                             units, g_kbd_max);
     } else {  // controller: on-screen keyboard (osk.mm, shared with our menus' text fields)
-        int r = osk_keys(g_kbd_text, sizeof g_kbd_text, g_kbd_max, appearing, scale, g_font_big);
-        if (r) g_kbd = r > 0 ? 2 : 3;  // (Start / + confirms in menu_handle_event too)
+        int r = osk_keys(g_kbd_text, sizeof g_kbd_text, g_kbd_max, appearing, scale, g_font_big, true, PadLayout::Game);
+        if (r) g_kbd = r > 0 ? 2 : 3;
     }
     ImGui::End();
-    if (g_kbd.load() != 1) was_open = false;
 }
 
 // Game thread (runtime/hle/swkbd.c): show the dialog, re-present the last frame until it's answered.

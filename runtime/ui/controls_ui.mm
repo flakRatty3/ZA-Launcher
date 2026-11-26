@@ -412,10 +412,10 @@ extern "C" void controls_tab_draw(float scale) {
         int automatic = bind_prompts_auto();
         snprintf(autol, sizeof autol, "Auto (%s)", automatic == PROMPTS_NINTENDO ? TR("Original", "Original") : names[automatic]);
         opt_choice(TR("Button icons", "Ícones dos botões"), &g_settings.prompts, names, 6, PROMPTS_AUTO,
-                   TR("Auto follows the last input: keyboard, Xbox, or the original icons for other controllers. "
-                      "Supported game builds switch during play; other builds switch on the next start. Manual choices apply on the next start.",
-                      "Auto usa o último dispositivo: teclado, Xbox ou ícones originais para outros controles. "
-                      "Versões compatíveis mudam durante o jogo; outras mudam no próximo início. Escolhas manuais valem no próximo início."));
+                   TR("Auto uses the highest-priority connected controller: Xbox, PlayStation, Switch, Steam Deck, then keyboard. "
+                      "Supported prompts update during play.",
+                      "Auto usa o controle conectado de maior prioridade: Xbox, PlayStation, Switch, Steam Deck, depois o teclado. "
+                      "Os ícones compatíveis mudam durante o jogo."));
     }
     opt_toggle(TR("Battle moves by position", "Golpes por posição"), &g_settings.battle_abxy_position, false,
                TR("While ZL is held, the controller's A / B / X / Y go by position (the Switch's A on the right), so each "

@@ -88,11 +88,11 @@ bool ui_input_text(const char *label, char *buf, size_t size, ImGuiInputTextFlag
     return r;
 }
 
-int osk_keys(char *text, size_t cap, int max_chars, bool appearing, float scale, ImFont *big, bool upper_first) {
+int osk_keys(char *text, size_t cap, int max_chars, bool appearing, float scale, ImFont *big, bool upper_first, PadLayout layout) {
     static bool upper = true;
     if (appearing) upper = upper_first;
     ImGuiIO &io = ImGui::GetIO();
-    // back (B / Circle) deletes: owning it keeps ImGui's nav cancel (which drops the cursor off the keys) from seeing it
+    // [Matroskin] The grid owns the button assigned to Delete so ImGui navigation keeps focus on the keys.
     ImGuiID own = ImGui::GetID("##oskkeys");
     ImGui::SetKeyOwner(ImGuiKey_GamepadFaceRight, own);
     if (max_chars <= 0 || max_chars > (int)cap - 1) max_chars = (int)cap - 1;
@@ -139,7 +139,7 @@ int osk_keys(char *text, size_t cap, int max_chars, bool appearing, float scale,
     if (ImGui::Button("Cancel", ImVec2(k * 2, k))) r = -1;
     ImGui::SameLine();
     if (ImGui::Button("OK", ImVec2(k * 2, k))) r = 1;
-    ImGui::TextDisabled("%s  type      %s  delete      %s  OK      (%d / %d)", ui_pad_confirm_label(), ui_pad_back_label(),
+    ImGui::TextDisabled("%s  type      %s  delete      %s  OK      (%d / %d)", ui_pad_confirm_label(layout), ui_pad_back_label(layout),
                         ui_pad_start_label(), len, max_chars);
     return r;
 }

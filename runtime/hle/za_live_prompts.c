@@ -17,7 +17,8 @@ typedef struct { uint64_t id, addr; } FontFile;
 static FontMap maps[64];
 static FontFile files[8];
 static int nmaps, nfiles, initialized;
-static atomic_bool ready, contexts_ready, bag_context_ready, keybank_ready;
+static atomic_bool manifest_ready, ready, contexts_ready, bag_context_ready, keybank_ready, playstation_ready;
+static atomic_bool steamdeck_ready;
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 static uint32_t be32(const unsigned char *p) {
@@ -48,13 +49,15 @@ static void init(void) {
     return;
 #endif
     const char *disable=getenv("LUMIOSE_LIVE_PROMPTS");
-    if ((g_settings.prompts != PROMPTS_AUTO && g_settings.prompts != PROMPTS_KEYBOARD) || (disable && !strcmp(disable,"0"))) return;
+    if (disable && !strcmp(disable, "0")) return;
     FILE *f=fopen("textures/prompts/live/manifest.txt","r");
     if (!f) return;
     unsigned long long h,id; char line[100], tail; bool contexts = false, bag = false;
     while (fgets(line,sizeof line,f) && nmaps<64) {
         if (!strncmp(line, "# keyboard-context-v1", 21)) { contexts = true; continue; }
         if (!strncmp(line, "# keyboard-context-v2", 21)) { contexts = bag = true; continue; }
+        if (!strncmp(line, "# playstation-v1", 16)) { atomic_store(&playstation_ready, true); continue; }
+        if (!strncmp(line, "# steamdeck-v1", 14)) { atomic_store(&steamdeck_ready, true); continue; }
         if (!strncmp(line, "# keyboard-keybank-v1", 20)) { atomic_store(&keybank_ready,true); continue; }
         if (sscanf(line,"%16llx %16llx.ttf %c",&h,&id,&tail)==2)
             maps[nmaps++]=(FontMap){(uint64_t)h,(uint64_t)id};
@@ -62,8 +65,17 @@ static void init(void) {
     fclose(f);
     atomic_store(&contexts_ready, contexts);
     atomic_store(&bag_context_ready, bag);
-    LOG("[prompts] context sets %s\n", contexts ? "available" : "not available");
+    atomic_store(&manifest_ready, nmaps != 0);
+    LOG("[prompts] %d font signatures, context sets %s\n", nmaps, contexts ? "available" : "not available");
 }
+bool rt_za_prompt_live_available(void) {
+    pthread_mutex_lock(&lock);
+    if (!initialized) init();
+    const bool available = atomic_load(&manifest_ready);
+    pthread_mutex_unlock(&lock);
+    return available;
+}
+
 uint64_t rt_za_prompt_font(uint64_t addr) {
     pthread_mutex_lock(&lock);
     if (!initialized) init();
@@ -97,8 +109,9 @@ uint64_t rt_za_prompt_font(uint64_t addr) {
     return result;
 }
 int rt_za_live_prompt_style(void) {
-    if (!atomic_load(&ready)) return -1;
-    int style = g_settings.prompts == PROMPTS_AUTO ? input_prompt_auto() : g_settings.prompts;
+    // [Matroskin] A texture prompt can appear before the game's icon fonts have loaded.
+    if (!atomic_load(&manifest_ready)) return -1;
+    int style = input_prompt_style();
     if (style == PROMPTS_KEYBOARD && atomic_load(&contexts_ready)) {
         extern int input_keyboard_prompt_context(void);
         int context=input_keyboard_prompt_context();
@@ -112,7 +125,7 @@ uint32_t rt_za_prompt_code(uint32_t cp) {
     bool glyph=(cp>=0xe31d && cp<=0xe32a) || (cp>=0xe32e && cp<=0xe331) ||
         cp==0xe335 || cp==0xe336 || cp==0xe338 || cp==0xe339 || (cp>=0xe33c && cp<=0xe33f);
     if (!glyph || !atomic_load(&ready)) return cp;
-    int style=g_settings.prompts == PROMPTS_AUTO ? input_prompt_auto() : g_settings.prompts;
+    int style=input_prompt_style();
     if (style == PROMPTS_KEYBOARD) {
         static const uint32_t bases[] = {0xe600, 0xe800, 0xe900, 0xea00, 0xeb00};
         extern int input_keyboard_prompt_context(void);
@@ -141,8 +154,21 @@ uint32_t rt_za_prompt_code(uint32_t cp) {
         }
         return bases[context>4?0:context] + cp - 0xe31d;
     }
-    return style==PROMPTS_XBOX ? 0xe700+cp-0xe31d : cp;
+    // [Matroskin] Older font packs can use the glyphs for the Xbox face buttons until the Deck bank is available.
+    if (style == PROMPTS_STEAMDECK && atomic_load(&steamdeck_ready))
+        return 0xf700 + cp - 0xe31d;
+    if (style == PROMPTS_XBOX || style == PROMPTS_STEAMDECK) return 0xe700 + cp - 0xe31d;
+    if (style == PROMPTS_PLAYSTATION && atomic_load(&playstation_ready))
+        return 0xf600 + cp - 0xe31d;
+    return cp;
 }
 RT_ON_RESET(za_live_prompts_reset) {
-    atomic_store(&ready,false); atomic_store(&contexts_ready,false); atomic_store(&bag_context_ready,false); atomic_store(&keybank_ready,false); initialized=nmaps=nfiles=0;
+    atomic_store(&manifest_ready, false);
+    atomic_store(&ready, false);
+    atomic_store(&contexts_ready, false);
+    atomic_store(&bag_context_ready, false);
+    atomic_store(&keybank_ready, false);
+    atomic_store(&playstation_ready, false);
+    atomic_store(&steamdeck_ready, false);
+    initialized = nmaps = nfiles = 0;
 }
